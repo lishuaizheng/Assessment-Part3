@@ -1,0 +1,79 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+library(spatstat)
+library(sp)
+library(rgeos)
+library(maptools)
+library(GISTools)
+library(tmap)
+library(sf)
+library(geojsonio)
+library(tmaptools)
+```
+
+
+```{r}
+####Basemap
+library(tmap)
+BoroughMap <- geojson_read("https://raw.githubusercontent.com/ft-interactive/geo-data/master/uk/london/london-wards-2014.geojson", what = "sp")
+BNG = "+init=epsg:27700"
+BoroughMapBNG <- spTransform(BoroughMap,BNG)
+WGS = "+init=epsg:4326"
+tmap_mode("view")
+tm_shape(BoroughMapBNG) +tm_polygons(col = NA, alpha = 0.5)
+
+#aggregate city of london 
+library(sf)
+library(dplyr)
+library(rgdal)
+BoroughMapSF <- st_as_sf(BoroughMapBNG)
+library(rgeos)
+CityofLondon<- gUnionCascaded(BoroughMapBNG[c(630:654), ])
+plot(CityofLondon)
+CityofLondonSF <- st_as_sf(CityofLondon)
+CityofLondonSF$gss_code_ward<-"E05000001"  ##add same columns in city of london, for aggregating with other borough
+CityofLondonSF$gss_code_borough <- "E09000001"
+CityofLondonSF$borough <-"City Of London"
+CityofLondonSF$ward <- "City Of London"
+BoroughMapSFnew <- BoroughMapSF[-c(630:654), ]
+LondonWardSF <- rbind(BoroughMapSFnew,CityofLondonSF) ##Attention New not new
+LondonWard <- as(BoroughMapSFNew,"Spatial")
+plot(LondonWard)
+tm_shape(LondonWard) +tm_polygons(col = NA, alpha = 0.5)
+
+
+```
+
+```{r}
+####population density (using https://data.london.gov.uk/dataset/land-area-and-population-density-ward-and-borough 2016)
+library(tidyverse)
+Density <- read_csv("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/population_density_2016_final.csv",na = "n/a")
+#normalization population_per_square_km
+normalization<-function(x){
+return((x-min(x))/(max(x)-min(x)))}
+density.normalization <- normalization(Density$`population density`)
+Density$Density.normalization <- density.normalization
+
+#join the data to basemap P3P27
+LondonWard.join.popdens <- LondonWardSF%>% left_join(Density,by=c("gss_code_ward"="New Code"))
+qtm(LondonWard.join.popdens,fill="Density.normalization")
+```
+
+```{r}
+#### coexistence of old and new building
+#read building list
+building <- readOGR("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/Listed Buildings/ListedBuildings_06Dec2018.shp",layer="ListedBuildings_06Dec2018")
+
+library(maptools)
+LondonBoundary<-unionSpatialPolygons(LondonWard,gss_code_borough)
+plot(LondonBoundary)
+```
+
