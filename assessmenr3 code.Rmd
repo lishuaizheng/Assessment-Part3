@@ -17,6 +17,9 @@ library(tmap)
 library(sf)
 library(geojsonio)
 library(tmaptools)
+library(tidyverse)
+library(rgdal)
+
 ```
 
 
@@ -45,7 +48,7 @@ CityofLondonSF$borough <-"City Of London"
 CityofLondonSF$ward <- "City Of London"
 BoroughMapSFnew <- BoroughMapSF[-c(630:654), ]
 LondonWardSF <- rbind(BoroughMapSFnew,CityofLondonSF) ##Attention New not new
-LondonWard <- as(BoroughMapSFNew,"Spatial")
+LondonWard <- as(LondonWardSF,"Spatial")
 plot(LondonWard)
 tm_shape(LondonWard) +tm_polygons(col = NA, alpha = 0.5)
 
@@ -75,5 +78,95 @@ building <- readOGR("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3
 library(maptools)
 LondonBoundary<-unionSpatialPolygons(LondonWard,gss_code_borough)
 plot(LondonBoundary)
+```
+
+```{r}
+### Public transport accessibility level(PTAL)
+PTAL <- read_csv("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/Ward2014 Avpublic transport accessibility level2015.csv",na = "n/a")
+#normalization PTAL
+normalization<-function(x){
+return((x-min(x))/(max(x)-min(x)))}
+PTAL.normalization <- normalization(PTAL$AvPTAI2015)
+PTAL$PTAL.normalization <- PTAL.normalization
+#join the data to basemap P3P27
+LondonWard.join.PTAL <- LondonWardSF%>% left_join(PTAL,by=c("gss_code_ward"="Ward Code"))
+qtm(LondonWard.join.PTAL,fill="PTAL.normalization")
+qtm(LondonWard.join.PTAL,fill="AvPTAI2015")
+
+```
+
+```{r}
+#### Road intersections
+#node <- read_shape("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/Road Networkoproad_essh_gb/TQ_RoadNode.shp",as.sf=TRUE)
+node <- readOGR("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/Road Networkoproad_essh_gb/new_road_node.shp",layer="new_road_node")
+BNG = "+init=epsg:27700"
+nodeBNG <- spTransform(node, BNG)
+summary(node)
+##qtm(nodeBNG)
+nodeBNGSF <- st_as_sf(nodeBNG)
+#select the node type"junction"
+nodeBNGSF <- nodeBNGSF[which(nodeBNGSF$formOfNode=="junction"),]
+nodeBNGSP <- as(nodeBNGSF, "Spatial")
+head(node)
+#select node point in borough
+nodeBNGSP <- remove.duplicates(nodeBNGSP)
+nodeBNGSP.final<- nodeBNGSP[LondonWard,]
+# tmap view
+tmap_mode("view")
+tm_shape(LondonWard) +
+  tm_polygons(col = NA, alpha = 0.5) +
+tm_shape(nodeBNGSP.final) +
+  tm_dots(col = "blue")
+
+# count number of point in each ward 
+library(GISTools)
+poly.counts(nodeBNGSP.final, LondonWard) -> nodecount
+##setNames(nodecount, LondonWard@data$nodecount)
+London.node <- LondonWardSF
+London.node$nodecount <- nodecount   #add number of point to each ward (London.node$nodecount)
+#combine the ward area(sq km)
+London.node$Square_Kilometres <- LondonWard.join.popdens$`Square Kilometres`
+#calculate point/area--point per square kilometre
+London.node$PointPerSK <-London.node$nodecount/London.node$Square_Kilometres
+
+```
+
+```{r}
+### Land use mix
+#https://en.wikipedia.org/wiki/Planning_use_classes_in_England 
+# six classes--
+landcover <- readOGR("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/greater-london-latest-free.shp/gis_osm_landuse_a_free_1.shp",layer="gis_osm_landuse_a_free_1")
+landcoverBNG <- spTransform(landcover, BNG)
+landcoverBNGSF <- st_as_sf(landcoverBNG)
+#find missing data in each column in landcoverBNGSF
+colSums(is.na(landcoverBNGSF))
+#get the classes of landcover
+summary(landcoverBNGSF)
+#CLASS1 greenspace
+greenspaceBNGSF <- landcoverBNGSF[ which( landcoverBNGSF$fclass =="park" |  landcoverBNGSF$fclass =="forest"|landcoverBNGSF$fclass =="nature_reserve"|landcoverBNGSF$fclass =="grass"),] 
+#CLASS2 industrial
+industrialBNGSF <- landcoverBNGSF[ which( landcoverBNGSF$fclass =="industrial" ),]
+#CLASS 3 residential
+residentialBNGSF <- landcoverBNGSF[ which( landcoverBNGSF$fclass =="residential" ),]
+residentialBNGSP <- as(residentialBNGSF,"Spatial")
+library(raster)
+LondonWard.Poly <- as(LondonWard, 'SpatialPolygons')
+residential.Poly <- as(residentialBNGSP, 'SpatialPolygons')
+r <- raster(ncols=40, nrows=40) #generate raster size(quantity)
+extent(r) <- extent(residentialBNGSP)  #Important! Assign the extent of raster to cover the same extents of the polygon
+residential.Raster <- rasterize(residentialBNGSP,r) #convert polygon to raster
+residential.extract <- raster::extract(residential.Raster,LondonWard,df=TRUE, weights = TRUE)
+
+#LondonWard$sum_in_poly <- unlist(lapply(residential.extract , function(x) if (!is.null(x)) sum(x, na.rm=TRUE) else NA ))
+list(lapply(residential.extract, function(x) if (!is.null(x)) mean(x, na.rm=TRUE) else NA ))
+
+tmap_mode("view")
+tm_shape(LondonWard) +
+  tm_polygons(col = NA, alpha = 0.5) +
+tm_shape(residentialBNGSP) +
+  tm_polygons(col = "blue")
+#
+
+
 ```
 
