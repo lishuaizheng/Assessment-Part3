@@ -13,6 +13,7 @@ library(sp)
 library(rgeos)
 library(maptools)
 library(GISTools)
+install.packages("tidyverse")
 library(tmap)
 library(sf)
 library(geojsonio)
@@ -49,6 +50,7 @@ CityofLondonSF$ward <- "City Of London"
 BoroughMapSFnew <- BoroughMapSF[-c(630:654), ]
 LondonWardSF <- rbind(BoroughMapSFnew,CityofLondonSF) ##Attention New not new
 LondonWard <- as(LondonWardSF,"Spatial")
+rownames(LondonWardSF) <- 1:nrow(LondonWardSF)
 plot(LondonWard)
 tm_shape(LondonWard) +tm_polygons(col = NA, alpha = 0.5)
 
@@ -150,23 +152,49 @@ industrialBNGSF <- landcoverBNGSF[ which( landcoverBNGSF$fclass =="industrial" )
 residentialBNGSF <- landcoverBNGSF[ which( landcoverBNGSF$fclass =="residential" ),]
 residentialBNGSP <- as(residentialBNGSF,"Spatial")
 library(raster)
-LondonWard.Poly <- as(LondonWard, 'SpatialPolygons')
-residential.Poly <- as(residentialBNGSP, 'SpatialPolygons')
-r <- raster(ncols=40, nrows=40) #generate raster size(quantity)
+r <- raster(ncols=80, nrows=80) #generate raster size(quantity)
 extent(r) <- extent(residentialBNGSP)  #Important! Assign the extent of raster to cover the same extents of the polygon
-residential.Raster <- rasterize(residentialBNGSP,r) #convert polygon to raster
-residential.extract <- raster::extract(residential.Raster,LondonWard,df=TRUE, weights = TRUE)
+residential.Raster <- rasterize(residentialBNGSP,r,background=NA) #convert polygon to raster
+#values(residential.Raster) <- 1
 
-#LondonWard$sum_in_poly <- unlist(lapply(residential.extract , function(x) if (!is.null(x)) sum(x, na.rm=TRUE) else NA ))
-list(lapply(residential.extract, function(x) if (!is.null(x)) mean(x, na.rm=TRUE) else NA ))
+#extract rasters from polygons
+residential.extract <- raster::extract(residential.Raster,LondonWard,df=TRUE, weights =TRUE, na.rm = TRUE)#cannot use method=bilinear in raster-in-polygon
+#remove rows with NA
+row.has.na <- apply(residential.extract, 1, function(x){any(is.na(x))})
+residential.extract2 <-residential.extract[!row.has.na,]
+#residential.extract.counts <- lapply(residential.extract,table)
+#residential.extract.wardsum$Var1 <- as.factor(residential.extract.wardsum$Var1)
+#levels(residential.extract.wardsum$Var1) <- levels(LondonWard$ward)
+#merge the pixel in same ward(aggregate the frequency of the same data in one)
+library(plyr)
+residential.extract.sum <- factor(residential.extract2$ID)  
+residential.extract.sum <- table(residential.extract2$ID)
+residential.extract.wardsum <- as.data.frame(residential.extract.sum)
+residential.extract.final <- merge(residential.extract.wardsum, LondonWardSF, by=0, all=TRUE)
+#replace NA values with 0
+residential.extract.final[is.na(residential.extract.final)] <- 0
+#remove useless column
+residential.extract.final$Var1 <- NULL
+#rename the column
+colnames(residential.extract.final)[2] <- "Freq.residential"
 
+
+
+```
+
+```{r}
+
+qtm(residential.Raster)
+library(tmap)
 tmap_mode("view")
 tm_shape(LondonWard) +
   tm_polygons(col = NA, alpha = 0.5) +
 tm_shape(residentialBNGSP) +
   tm_polygons(col = "blue")
-#
+```
 
+```{r}
+#### POIs
 
 ```
 
