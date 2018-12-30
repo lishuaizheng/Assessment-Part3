@@ -20,7 +20,9 @@ library(geojsonio)
 library(tmaptools)
 library(tidyverse)
 library(rgdal)
-
+library(raster)
+library(SciViews)
+library(base)
 ```
 
 
@@ -95,11 +97,21 @@ LondonWard.join.PTAL <- LondonWardSF%>% left_join(PTAL,by=c("gss_code_ward"="War
 qtm(LondonWard.join.PTAL,fill="PTAL.normalization")
 qtm(LondonWard.join.PTAL,fill="AvPTAI2015")
 
+###Public open space accessibility level(POSAL)
+POSAL <- read_csv("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/access_public_open_space_ward.csv",na = "n/a")
+POSAL$POSAL.normalization <- normalization(POSAL$`Open Space`)
+LondonWard.join.POSAL <- LondonWardSF%>% left_join(POSAL,by=c("gss_code_ward"="WD13CD"))
+#qtm(LondonWard.join.POSAL,fill="POSAL.normalization")
+#combine two accessibility sub-index
+Access.normalization<- merge(POSAL,PTAL, by.x="WD13CD",by.y="Ward Code",all=TRUE)
+#remove useless column and rows
+Access.normalization[,c(4:8,10:11)] <- NULL
+#calculate the mean of two accessibility level
+Access.normalization$access.mean <- rowMeans(Access.normalization[c('PTAL.normalization', 'POSAL.normalization')], na.rm=TRUE)
 ```
 
 ```{r}
-#### Road intersections
-#node <- read_shape("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/Road Networkoproad_essh_gb/TQ_RoadNode.shp",as.sf=TRUE)
+### Road intersections
 node <- readOGR("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/Road Networkoproad_essh_gb/new_road_node.shp",layer="new_road_node")
 BNG = "+init=epsg:27700"
 nodeBNG <- spTransform(node, BNG)
@@ -134,52 +146,204 @@ London.node$PointPerSK <-London.node$nodecount/London.node$Square_Kilometres
 ```
 
 ```{r}
+###economic vitality
+#CLASS 1  house price
+#HousePrice <- read_csv("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/house_price_mean2016.csv",na = "n/a")
+#HousePrice.normalization <- normalization(HousePrice$Value)
+#HousePrice$HousePrice.normalization <- HousePrice.normalization
+#CLASS 2 economic activity
+EcoAct <- read_csv("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/economic_activity_ward.csv",na = "n/a")
+EcoAct.normalization <- normalization(EcoAct$`Economically active: Total`)
+EcoAct$EcoAct.normalization <- EcoAct.normalization
+
+```
+
+```{r}
 ### Land use mix
 #https://en.wikipedia.org/wiki/Planning_use_classes_in_England 
 # six classes--
 landcover <- readOGR("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/greater-london-latest-free.shp/gis_osm_landuse_a_free_1.shp",layer="gis_osm_landuse_a_free_1")
 landcoverBNG <- spTransform(landcover, BNG)
 landcoverBNGSF <- st_as_sf(landcoverBNG)
+
+AOIS <- readOGR("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/greater-london-latest-free.shp/gis_osm_pois_a_free_1.shp",layer="gis_osm_pois_a_free_1")
+AOISBNG <- spTransform(AOIS, BNG)
+AOISBNGSF <- st_as_sf(AOISBNG)
+
 #find missing data in each column in landcoverBNGSF
 colSums(is.na(landcoverBNGSF))
 #get the classes of landcover
 summary(landcoverBNGSF)
 #CLASS1 greenspace
 greenspaceBNGSF <- landcoverBNGSF[ which( landcoverBNGSF$fclass =="park" |  landcoverBNGSF$fclass =="forest"|landcoverBNGSF$fclass =="nature_reserve"|landcoverBNGSF$fclass =="grass"),] 
-#CLASS2 industrial
-industrialBNGSF <- landcoverBNGSF[ which( landcoverBNGSF$fclass =="industrial" ),]
+greenspaceBNGSP <- as(greenspaceBNGSF,"Spatial")
+#CLASS2 industrial and commercial
+industrialBNGSF <- landcoverBNGSF[ which( landcoverBNGSF$fclass =="industrial"| landcoverBNGSF$fclass =="commercial"),]
+industrialBNGSP <- as(industrialBNGSF,"Spatial")
 #CLASS 3 residential
 residentialBNGSF <- landcoverBNGSF[ which( landcoverBNGSF$fclass =="residential" ),]
 residentialBNGSP <- as(residentialBNGSF,"Spatial")
+#CLASS 4 recreation-leisure
+recreationBNGSF1 <- landcoverBNGSF[ which( landcoverBNGSF$fclass =="recreation_ground"| landcoverBNGSF$fclass =="allotments"),]
+recreationBNGSF2 <- AOISBNGSF[ which(AOISBNGSF$fclass =="attraction"|AOISBNGSF$fclass =="theatre"|AOISBNGSF$fclass =="arts_centre"),]
+recreationBNGSF <- rbind(recreationBNGSF2,recreationBNGSF1)
+recreationBNGSP <- as(recreationBNGSF,"Spatial")
+
+
+#CLASS 5 retail
+retailBNGSF1 <- landcoverBNGSF[ which( landcoverBNGSF$fclass =="retail" ),]
+retailBNGSF2 <- AOISBNGSF[ which( AOISBNGSF$fclass =="retail" ),]
+retialBNGSF <- rbind(retailBNGSF2,retailBNGSF1)
+retailBNGSP <- as(retailBNGSF,"Spatial")
+
+#CLASS 6--community services
+communityBNGSF <- AOISBNGSF[ which(AOISBNGSF$fclass =="school"|AOISBNGSF$fclass =="hospital"|AOISBNGSF$fclass =="nursing_home"|AOISBNGSF$fclass =="university"  ),]
+communityBNGSP <- as(communityBNGSF,"Spatial")
+
+#CLASS 7--transport
+transport <- readOGR("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/greater-london-latest-free.shp/road_polygon_merge.shp",layer="road_polygon_merge")
+transportBNG <- spTransform(transport, BNG)
+transportBNG <- transportBNG[transportBNG@data$AREA >10000,] 
+
+
+```
+
+```{r}
+# Assign the land use area for each subset. Here we first use the most widespread residential as example 
 library(raster)
-r <- raster(ncols=80, nrows=80) #generate raster size(quantity)
+r <- raster(ncols=400, nrows=400) #generate raster size(quantity)
 extent(r) <- extent(residentialBNGSP)  #Important! Assign the extent of raster to cover the same extents of the polygon
 residential.Raster <- rasterize(residentialBNGSP,r,background=NA) #convert polygon to raster
-#values(residential.Raster) <- 1
-
-#extract rasters from polygons
-residential.extract <- raster::extract(residential.Raster,LondonWard,df=TRUE, weights =TRUE, na.rm = TRUE)#cannot use method=bilinear in raster-in-polygon
+#tmap_mode("view")
+#qtm(residential.Raster)+tm_shape(LondonWard) +tm_polygons(col = NA, alpha = 0.5)
+#extract rasters from polygons#(extract() cannot use method=bilinear in raster-in-polygon)
+residential.extract <- raster::extract(residential.Raster,LondonWard,df=TRUE, weights =FALSE, na.rm = TRUE)
 #remove rows with NA
 row.has.na <- apply(residential.extract, 1, function(x){any(is.na(x))})
 residential.extract2 <-residential.extract[!row.has.na,]
-#residential.extract.counts <- lapply(residential.extract,table)
-#residential.extract.wardsum$Var1 <- as.factor(residential.extract.wardsum$Var1)
-#levels(residential.extract.wardsum$Var1) <- levels(LondonWard$ward)
 #merge the pixel in same ward(aggregate the frequency of the same data in one)
 library(plyr)
 residential.extract.sum <- factor(residential.extract2$ID)  
 residential.extract.sum <- table(residential.extract2$ID)
 residential.extract.wardsum <- as.data.frame(residential.extract.sum)
-residential.extract.final <- merge(residential.extract.wardsum, LondonWardSF, by=0, all=TRUE)
+#create new order number for LondonWardSF, for merge the residential.extract and LondonWardSF by order
+LondonWard2SF <- LondonWardSF
+LondonWard2SF$Var1 <- 1:630
+LondonWard2SF[,'Var1']<-factor(LondonWard2SF[,'Var1'])
+#merge two dataframe
+residential.extract.final <- merge(residential.extract.wardsum, LondonWard2SF, by="Var1",all=TRUE)
+#residential.extract.final [!duplicated(residential.extract.final ), ]
 #replace NA values with 0
 residential.extract.final[is.na(residential.extract.final)] <- 0
-#remove useless column
-residential.extract.final$Var1 <- NULL
 #rename the column
 colnames(residential.extract.final)[2] <- "Freq.residential"
+#raster cell size
+#we have to convert raster to polygon because of raster(). This function only compute the pixel area in longitude/latitude coordiante system
+residential.repolygon <- rasterToPolygons(residential.Raster, fun=NULL, n=4, na.rm=TRUE, digits=12, dissolve=TRUE)
+#qtm(residential.repolygon)
+residential.repolygonSF <- st_as_sf(residential.repolygon) 
+residential.repolygonSF$area <- st_area(residential.repolygonSF)
+#so the single pixel area is 28999.54 [m^2](0.029 km^2)
+
+```
+
+```{r}
+##based on the details above, we create functions for land use analysis
+function.raster <- function(landsp){
+  extent(r) <- extent(landsp)
+  landsp.Raster <- rasterize(landsp,r,background=NA)
+  return(landsp.Raster)
+}
+
+function.extract<- function(landsp.Raster){
+  landsp.extract <- raster::extract(landsp.Raster,LondonWard,df=TRUE, weights =FALSE, na.rm = TRUE)
+  row.has.na <- apply(landsp.extract, 1, function(x){any(is.na(x))})
+  landsp.extract2 <-landsp.extract[!row.has.na,]
+  landsp.extract.sum <- factor(landsp.extract2$ID)  
+  landsp.extract.sum <- table(landsp.extract2$ID)
+  landsp.extract.wardsum <- as.data.frame(landsp.extract.sum)
+  landsp.extract.final <- merge(landsp.extract.wardsum, LondonWard2SF, by="Var1",all=TRUE)
+  landsp.extract.final[is.na(landsp.extract.final)] <- 0
+  return(landsp.extract.final)
+}
+```
+
+```{r}
+#green space raster
+greenspace.Raster <- function.raster(greenspaceBNGSP)
+greenspace.extract.final <- funtion.extract(greenspace.Raster)
+colnames(greenspace.extract.final)[2] <- "Freq.greenspace"
+
+#industrial and commercial
+industrial.Raster <- function.raster(industrialBNGSP)
+industrial.extract.final <- function.extract(industrial.Raster)
+colnames(industrial.extract.final)[2] <- "Freq.industrial"
+#recreation
+recreation.Raster <- function.raster(recreationBNGSP)
+recreation.extract.final <- function.extract(recreation.Raster)
+colnames(recreation.extract.final)[2] <- "Freq.recreation"
+#retail
+retail.Raster <- function.raster(recreationBNGSP)
+retail.extract.final <- function.extract(retail.Raster)
+colnames(retail.extract.final)[2] <- "Freq.retail"
+#community
+community.Raster <- function.raster(communityBNGSP)
+community.extract.final <- function.extract(community.Raster)
+colnames(community.extract.final)[2] <- "Freq.community"
+#transport
+transport.Raster <- function.raster(transportBNG)
+transport.extract.final <- function.extract(transport.Raster)
+colnames(transport.extract.final)[2] <- "Freq.transport"
+
+tmap_mode("view")
+tm_shape(LondonWard) +tm_polygons(col = NA, alpha = 0.2)+qtm(recreation.Raster)
+#tm_shape(LondonWard) +tm_polygons(col = NA, alpha = 0.2)+qtm(residential.Raster)
+
+#extract useful columns from multiple dataframe
+landuse.dataframe <- residential.extract.final
+landuse.dataframe <- merge(landuse.dataframe,greenspace.extract.final, by="Var1",all=TRUE)
+landuse.dataframe <- merge(landuse.dataframe,industrial.extract.final, by="Var1",all=TRUE)
+landuse.dataframe <- merge(landuse.dataframe,recreation.extract.final, by="Var1",all=TRUE)
+landuse.dataframe <- merge(landuse.dataframe,retail.extract.final, by="Var1",all=TRUE)
+landuse.dataframe <- merge(landuse.dataframe,community.extract.final, by="Var1",all=TRUE)
+landuse.dataframe <- merge(landuse.dataframe,transport.extract.final, by="Var1",all=TRUE)
+landuse.dataframe[,c(9:13,15:19,21:25,27:31,33:37,39:43)] <- NULL #remove useless column
+colnames(landuse.dataframe)[2] <- "residential.freq" #rename column
+head(landuse.dataframe)
 
 
+```
 
+```{r}
+
+#calculate each ward area
+landuse.dataframeSF <-left_join(LondonWardSF,landuse.dataframe,by=c("gss_code_ward"="gss_code_ward.x"))
+landuse.dataframeSF$wardArea <- st_area(landuse.dataframeSF)
+
+library(SciViews)
+function.landusemix <- function(landusefreq){
+  landusearea <- landusefreq*(0.029*0.029)
+  landusePercent <- landusearea/landuse.dataframeSF$wardArea
+  LUM <- landusePercent*ln(landusePercent)
+  return(LUM)
+}
+
+landuse.dataframeSF$residential.LUM <- function.landusemix(landuse.dataframeSF$residential.freq)
+landuse.dataframeSF$greenspace.LUM <- function.landusemix(landuse.dataframeSF$Freq.greenspace)
+landuse.dataframeSF$industrial.LUM <- function.landusemix(landuse.dataframeSF$Freq.industrial)
+landuse.dataframeSF$recreation.LUM <- function.landusemix(landuse.dataframeSF$Freq.recreation)
+landuse.dataframeSF$retail.LUM <- function.landusemix(landuse.dataframeSF$Freq.retail)
+landuse.dataframeSF$community.LUM <- function.landusemix(landuse.dataframeSF$Freq.community)
+landuse.dataframeSF$transport.LUM <- function.landusemix(landuse.dataframeSF$Freq.transport)
+library(base)
+###sum landuse.LUM and calculate index
+index.dataframe<- st_set_geometry(landuse.dataframeSF[,c(1:6,18:25)],NULL)
+#replace NAN with 0
+index.dataframe[is.na(index.dataframe)] <- 0 
+###compute land use mix index
+index.dataframe$MixIndex <- (abs(rowSums(index.dataframe[,8:14])))/ln(7)
+
+qtm(index.dataframeSF,fill="MixIndex")
 ```
 
 ```{r}
@@ -194,7 +358,19 @@ tm_shape(residentialBNGSP) +
 ```
 
 ```{r}
-#### POIs
-
+###combine all subindex 
+index.dataframe <- merge(index.dataframe,Density,by.x="gss_code_ward",by.y="New Code",all=TRUE)
+#index.dataframe[,3:7] <- NULL
+index.dataframe <- merge(index.dataframe,Access.normalization, by.x="gss_code_ward",by.y="WD13CD",all=TRUE)
+index.dataframe <- merge(index.dataframe,EcoAct, by.x="gss_code_ward",by.y="New Code",all=TRUE)
+index.dataframe <- index.dataframe[,c(1:4,15,20,25,29)]
+###calculate the final index of wards,set weights
+function.vitality.index <- function(wLand,wDensity,wAccess,wEcoAct){
+  Index <- (wLand)*(index.dataframe[,5])+(wDensity)*(index.dataframe[,6])+(wAccess)*(index.dataframe[,7])+(wEcoAct)*(index.dataframe[,8])
+  return(Index)
+}
+index.dataframe$Index <- function.vitality.index(0.5,0.2,0.2,0.1)
+#join with LondonWardSF
+index.dataframeSF <-left_join(LondonWardSF,index.dataframe,by=c("gss_code_ward"="gss_code_ward"))
+qtm(index.dataframeSF,fill="Index")
 ```
-
