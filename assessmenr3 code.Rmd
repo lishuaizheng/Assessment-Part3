@@ -23,6 +23,8 @@ library(rgdal)
 library(raster)
 library(SciViews)
 library(base)
+library(broom)
+library(spdep)
 ```
 
 
@@ -142,9 +144,12 @@ London.node$nodecount <- nodecount   #add number of point to each ward (London.n
 London.node$Square_Kilometres <- LondonWard.join.popdens$`Square Kilometres`
 #calculate point/area--point per square kilometre
 London.node$PointPerSK <-London.node$nodecount/London.node$Square_Kilometres
-
+qtm(London.node,fill="PointPerSK")
+#join with LondonWardSF
+London.nodeSF <- append_data(LondonWardSF,London.node, key.shp = "code", key.data = "New.code", ignore.duplicates = TRUE)
 ```
 
+economic vitality
 ```{r}
 ###economic vitality
 #CLASS 1  house price
@@ -158,6 +163,7 @@ EcoAct$EcoAct.normalization <- EcoAct.normalization
 
 ```
 
+land use mix
 ```{r}
 ### Land use mix
 #https://en.wikipedia.org/wiki/Planning_use_classes_in_England 
@@ -247,6 +253,7 @@ residential.repolygonSF$area <- st_area(residential.repolygonSF)
 
 ```
 
+land use mix functions
 ```{r}
 ##based on the details above, we create functions for land use analysis
 function.raster <- function(landsp){
@@ -369,8 +376,122 @@ function.vitality.index <- function(wLand,wDensity,wAccess,wEcoAct){
   Index <- (wLand)*(index.dataframe[,5])+(wDensity)*(index.dataframe[,6])+(wAccess)*(index.dataframe[,7])+(wEcoAct)*(index.dataframe[,8])
   return(Index)
 }
-index.dataframe$Index <- function.vitality.index(0.5,0.2,0.2,0.1)
-#join with LondonWardSF
+#assign weight to each subindex
+index.dataframe$Index <- function.vitality.index(0.4,0.3,0.2,0.1)
+#join with LondonWardSF and visualisation
 index.dataframeSF <-left_join(LondonWardSF,index.dataframe,by=c("gss_code_ward"="gss_code_ward"))
-qtm(index.dataframeSF,fill="Index")
+index.dataframeSP <- as(index.dataframeSF, "Spatial")
+#create index facet(using tmap)
+tmap_mode("view")
+tm_shape(index.dataframeSP )+
+    tm_polygons(c("Index", "MixIndex","Density.normalization","EcoAct.normalization","access.mean")) +
+    tm_facets(sync = TRUE, ncol = 1,nrow=5,drop.empty.facets = F)
 ```
+
+#Test for the relationship
+##Linear regression model
+
+```{r}
+###Since we have done the most important part of data manipulation, next we will explore the relationship between intersection and vitality
+#histogram of two variables
+qplot(PointPerSK, data = London.node, geom = "histogram")
+#ggplot(London.node, aes(x="PointPerSK", y=PointPerSK))+geom_boxplot()#(this is another code for boxplot in ggplot2)
+#qplot(y=London.node$PointPerSK, x= 0.1, geom = "boxplot")  
+
+qplot(Index, data = index.dataframe, geom = "histogram")
+#qplot(y= index.dataframe$Index, x= 0.1, geom = "boxplot")  
+
+#the variables look normally distributed,but we should consider the outliers
+plot(London.node$PointPerSK,index.dataframeSF$Index,col="blue")
+#after scatter plot, we should remove "Lady Margaret" as its unusual road intersection density(maybe due to the residential road intersections are included)
+
+node.index.frame <-merge(index.dataframe,London.node, by.x="gss_code_ward",by.y="gss_code_ward",all=TRUE) 
+#remove outlier--Lady Margaret(E05000181)
+#node.index.frame <- node.index.frame[node.index.frame$PointPerSK<300,]
+#linear regression plot
+qplot(PointPerSK,Index,data=node.index.frame,geom = "point") + stat_smooth(method="lm", se=FALSE, size=1)
+#fit the linear model
+model <- lm(PointPerSK ~ Index, data =node.index.frame)
+#residual dataframe
+library(broom)
+model_res <- tidy(model)
+summary(model)
+plot(model)
+
+
+```
+
+The coefficient (estimate) in the summary() table shows that(on average) for a 1 unit (day) increase in unauthorised absence from school, there is a reduction in the average GCSE point score of -29.874.
+
+The p-values for the intercept and the coefficient are highly statistically significant (<0.001) so we can rely on the relationship that is being observed.
+
+The adjusted R-squared statistic is 0.38, which tells us that 38% of the variation in GCSE scores across Wards in London can be explained by variation in unauthorised absence from school (which is quite a lot for a single variable).
+
+Interrogating the last graph in plot(model1)which is a scatter plot of fitted values (the model estimates achieved by plugging the values and coefficients back into the regression equation) against standardised residuals, we can see no apparent patterns in the cloud of points, which suggests the model has not violated any important assumptions.
+
+##Test for spatial patterns
+we shoud test that is there any spatial clustering of residuals.If these places cluster in space, then there might be some unobserved underlying factor causing this. This is important is it means that the assumption of independence that regression models rely upon might be violated.
+Now in our case here, there is not a clear violation of spatial independence, but it is certainly hinted at.
+ test for spatial patterns (spatial autocorrelation) using the Moran's I statistic
+```{r}
+### Test for spatial patterns (spatial autocorrelation) using the Moran's I statistic
+#copy a new LondonWardSF
+LondonWardSF.pattern <- LondonWardSF
+LondonWardSF.pattern$model_resids <- model$residuals
+LondonWardSF.pattern <- LondonWardSF.pattern[!(is.na(LondonWardSF.pattern$model_resids) ),]
+LondonWardSP.pattern <- as(LondonWardSF.pattern,"Spatial")
+tmap_mode("view")
+qtm(LondonWardSF.pattern,fill='model_resids')
+
+
+```
+
+```{r}
+#library(spdep)
+#Calculate the centroids of London wards
+centWard <- coordinates(LondonWardSP.pattern)
+plot(centWard)
+#Generate the spatial weights matrix,using binary matrix of queen's case neighbours
+#create neighbours list
+
+library(spdep)
+neighbour <- poly2nb(LondonWardSP.pattern,queen=T)
+#plot
+plot(neighbour,coordinates(centWard),col="red")
+plot(LondonWardSP.pattern,add=T)
+#create spatial weights object from these weights
+SpatialWeight <- nb2listw(neighbour,style="C",zero.policy=T)
+#Run moran I test
+moran.test(LondonWardSP.pattern@data$model_resids, SpatialWeight,zero.policy=T)
+```
+so here we have a statistically significant but relatively weak indication that there is some spatial clustering of residual values. A value of 0.07 (1 being perfect spatial autocorrelation, 0 being none at all) shows that there is no evidence that high residual values cluster near high values and low residual values cluster near lower values.
+
+
+#multi linear regression model
+```{r}
+###For a deeper research, we will build a multiple linear regression model to find whether the urban vitality index has a relationship with urban vitality sub-factors. If so, which one is the strongest or weakest.
+#
+library(corrplot)
+cormat <- cor(node.index.frame[,c(5:8,16)], use="complete.obs", method="pearson")
+corrplot(cormat)
+#rRun multiple regression model
+model_multi <- lm(PointPerSK ~ MixIndex+Density.normalization + access.mean + EcoAct.normalization, data = node.index.frame)
+summary(model_multi)
+```
+
+```{r}
+##same as residual autocorrelation analysis above
+model_res_multi <- tidy(model_multi)
+plot(model_multi)
+LondonWardSF.pattern$model_resids_multi <- model_multi$residuals
+LondonWardSP.pattern <- as(LondonWardSF.pattern,"Spatial")
+tmap_mode("view")
+qtm(LondonWardSF.pattern,fill='model_resids_multi')
+library(spdep)
+neighbour <- poly2nb(LondonWardSP.pattern,queen=T)
+#create spatial weights object from these weights
+SpatialWeight <- nb2listw(neighbour,style="C",zero.policy=T)
+#Run moran I test
+moran.test(LondonWardSP.pattern@data$model_resids_multi, SpatialWeight,zero.policy=T)
+```
+
