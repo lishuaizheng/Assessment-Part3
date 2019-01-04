@@ -1,13 +1,31 @@
 ---
-title: "R Notebook"
+title: "Assessment Part 3:
+  
+The Relationship Between Urban Vitality and Road Intersections:Spatial Verification for Jane Jacobs's Theory in London"
 output: html_notebook
 ---
+##1.	Introduction
+Urban vitality is viewed as the energy produced by human activity at different environments and times, and enhanced by a good structured urban form and urban functions (Landry, 2000; Li *et al*, 2016). Jane Jacobs's *the Death and Life of Great American Cities* (2016) had a significant influence on built environment design and urban life promotion. Based on observation and experiences, she concluded six physical environment conditions for urban vitality, one of which emphasized the urban fabric with short blocks and a high number of intersections could increase the contact possibility, consequently, develop the urban vitality. Since this theory was promoted in the context of major cities in the United States, it still needs empirical verification in various physical circumstance, as well as different cities with socioeconomic characteristics.
 
-This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+This study tests Jacobs's idea regarding whether there is any relationship between road intersections and urban vitality. Depending on comprehensive literature review, we summarize the factors for urban vitality assessment and assign weightings for each subset. Due to masses of data processing, we use R as an analysis tool for its advantages on data manipulation, statistical analysis and spatial visualization. So we build a reusable R code model for variables manipulation from an applied perspective, and obtain the vitality outcome in index and road intersection density (RID). Finally, we test the relationships in inferential statistics and examine the residuals to verify relationship existence and the dependency of two variables. 
 
-Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
 
-```{r}
+##2.	Literature review 
+Jane Jacobs' quest for urban vitality included mixed-use urban area, shorter blocks and frequent corners and intersections, a certain degree of aged building mixture, sufficient density of population concentration, a high degree of accessibility to parks and transport and the negative effect of border vacuums. Also, her theories are applicable to various scales of urban area, such as expanding roads, residential, blocks etc. These elements are partly or entirely confirmed by empirical studies in America and some European countries. Delclòs-Alió and Miralles-Guasch(2018) test Jacobs's ideas in Mediterranean conurbation in Barcelona (Spain) through ArcGIS in re-structured grid cells that reveals a center-periphery logic pattern of urban vitality. Sung et al deliver empirical verification in the context of Seoul (Korea) using survey statistics and spatial data, verifies the significance of urban diversity in pedestrian environment. In addition, some American and Canadian cities apply theories to urban planning and construction practice (Grant, 2002; Klemek, 2007). So we could partially learn from Jacobs's ideas combining other literature.
+
+Other scholars suggest more elements on urban diversity. Land use planning is the basic manner to facilitating activities (Chapin *et al*, 1979). Maas (1984) also emphasizes mix land use and pedestrian density as a significant characteristic of urban vitality. In addition, transport technologies keep urban activities together and result in population clusters (Batty *et al*., 2004). Apart from the built environment, Quigley (1998) proposes economies in production and consumption also relate to urban diversity, and night-time economy should be taken into consideration as the flows of night events (Montgomery, 1995). These spatial and socioeconomic elements provide a basis for urban vitality factor selections and weight distribution.
+
+Thus we integrate the general consensus factors for urban vitality index measurement. We use the population density, land use mix, accessibility and economic activity as factors for urban vitality measurement, and assign weightings for variables based on the decisive levels and significance. Integrated urban vitality index will be computed not only for relationship exploration but also for urban vitality assessment in London.
+
+##3.	Methodology and data processing
+###3.1Urban vitality index (UVI)
+Firstly, we use the London ward as the research unit for each variable, and combine wards in the city of London to consider it as a whole in London wards. All the objects used in this project will be converted into British National Grid coordinate reference system. Secondly, For the population density, public transport accessibility and public open space accessibility, and economic activity data from London Datastore, we read the csv files with tidyverse() function for data cleaning purpose, merge them with spatial polygon data frame of London ward, and calculate the indices after normalization. Moreover, the land use mix index is more complicated as it has more subsets which are combined from two shapefiles, and converted from polygon to raster for area calculation. Finally, the sum of these four indices will compose the urban vitality index and combine with RID, which is computed from road junction points in wards, to produce a function relationship. The specific workflow of data processing is shown below.
+```{r   echo=FALSE, fig.cap="A caption", out.width = '60%'}
+knitr::include_graphics("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/workflow.png")
+```
+                                    
+
+```{r eval=FALSE, include=FALSE}
 library(spatstat)
 library(sp)
 library(rgeos)
@@ -26,9 +44,7 @@ library(base)
 library(broom)
 library(spdep)
 ```
-
-
-```{r}
+```{r eval=FALSE, include=FALSE}
 ####Basemap
 library(tmap)
 BoroughMap <- geojson_read("https://raw.githubusercontent.com/ft-interactive/geo-data/master/uk/london/london-wards-2014.geojson", what = "sp")
@@ -55,14 +71,15 @@ BoroughMapSFnew <- BoroughMapSF[-c(630:654), ]
 LondonWardSF <- rbind(BoroughMapSFnew,CityofLondonSF) ##Attention New not new
 LondonWard <- as(LondonWardSF,"Spatial")
 rownames(LondonWardSF) <- 1:nrow(LondonWardSF)
-plot(LondonWard)
-tm_shape(LondonWard) +tm_polygons(col = NA, alpha = 0.5)
+tmap_mode("view")
+tm_shape(LondonWard) +tm_polygons(col = NA, alpha = 0.5)#+tm_text("ward",size=0.3, col="black") 
 
 
 ```
 
-```{r}
-####population density (using https://data.london.gov.uk/dataset/land-area-and-population-density-ward-and-borough 2016)
+```{r eval=FALSE, height=80, include=FALSE, width=80}
+#Here we take population density for example
+#(using https://data.london.gov.uk/dataset/land-area-and-population-density-ward-and-borough 2016)
 library(tidyverse)
 Density <- read_csv("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/population_density_2016_final.csv",na = "n/a")
 #normalization population_per_square_km
@@ -70,23 +87,13 @@ normalization<-function(x){
 return((x-min(x))/(max(x)-min(x)))}
 density.normalization <- normalization(Density$`population density`)
 Density$Density.normalization <- density.normalization
-
-#join the data to basemap P3P27
+#join the data to basemap
 LondonWard.join.popdens <- LondonWardSF%>% left_join(Density,by=c("gss_code_ward"="New Code"))
+tmap_mode("view")
 qtm(LondonWard.join.popdens,fill="Density.normalization")
 ```
 
-```{r}
-#### coexistence of old and new building
-#read building list
-building <- readOGR("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/Listed Buildings/ListedBuildings_06Dec2018.shp",layer="ListedBuildings_06Dec2018")
-
-library(maptools)
-LondonBoundary<-unionSpatialPolygons(LondonWard,gss_code_borough)
-plot(LondonBoundary)
-```
-
-```{r}
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
 ### Public transport accessibility level(PTAL)
 PTAL <- read_csv("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/Ward2014 Avpublic transport accessibility level2015.csv",na = "n/a")
 #normalization PTAL
@@ -103,7 +110,6 @@ qtm(LondonWard.join.PTAL,fill="AvPTAI2015")
 POSAL <- read_csv("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/access_public_open_space_ward.csv",na = "n/a")
 POSAL$POSAL.normalization <- normalization(POSAL$`Open Space`)
 LondonWard.join.POSAL <- LondonWardSF%>% left_join(POSAL,by=c("gss_code_ward"="WD13CD"))
-#qtm(LondonWard.join.POSAL,fill="POSAL.normalization")
 #combine two accessibility sub-index
 Access.normalization<- merge(POSAL,PTAL, by.x="WD13CD",by.y="Ward Code",all=TRUE)
 #remove useless column and rows
@@ -112,59 +118,20 @@ Access.normalization[,c(4:8,10:11)] <- NULL
 Access.normalization$access.mean <- rowMeans(Access.normalization[c('PTAL.normalization', 'POSAL.normalization')], na.rm=TRUE)
 ```
 
-```{r}
-### Road intersections
-node <- readOGR("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/Road Networkoproad_essh_gb/new_road_node.shp",layer="new_road_node")
-BNG = "+init=epsg:27700"
-nodeBNG <- spTransform(node, BNG)
-summary(node)
-##qtm(nodeBNG)
-nodeBNGSF <- st_as_sf(nodeBNG)
-#select the node type"junction"
-nodeBNGSF <- nodeBNGSF[which(nodeBNGSF$formOfNode=="junction"),]
-nodeBNGSP <- as(nodeBNGSF, "Spatial")
-head(node)
-#select node point in borough
-nodeBNGSP <- remove.duplicates(nodeBNGSP)
-nodeBNGSP.final<- nodeBNGSP[LondonWard,]
-# tmap view
-tmap_mode("view")
-tm_shape(LondonWard) +
-  tm_polygons(col = NA, alpha = 0.5) +
-tm_shape(nodeBNGSP.final) +
-  tm_dots(col = "blue")
-
-# count number of point in each ward 
-library(GISTools)
-poly.counts(nodeBNGSP.final, LondonWard) -> nodecount
-##setNames(nodecount, LondonWard@data$nodecount)
-London.node <- LondonWardSF
-London.node$nodecount <- nodecount   #add number of point to each ward (London.node$nodecount)
-#combine the ward area(sq km)
-London.node$Square_Kilometres <- LondonWard.join.popdens$`Square Kilometres`
-#calculate point/area--point per square kilometre
-London.node$PointPerSK <-London.node$nodecount/London.node$Square_Kilometres
-qtm(London.node,fill="PointPerSK")
-#join with LondonWardSF
-London.nodeSF <- append_data(LondonWardSF,London.node, key.shp = "code", key.data = "New.code", ignore.duplicates = TRUE)
-```
-
-economic vitality
-```{r}
+```{r eval=FALSE, include=FALSE}
 ###economic vitality
-#CLASS 1  house price
-#HousePrice <- read_csv("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/house_price_mean2016.csv",na = "n/a")
-#HousePrice.normalization <- normalization(HousePrice$Value)
-#HousePrice$HousePrice.normalization <- HousePrice.normalization
-#CLASS 2 economic activity
 EcoAct <- read_csv("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/economic_activity_ward.csv",na = "n/a")
 EcoAct.normalization <- normalization(EcoAct$`Economically active: Total`)
 EcoAct$EcoAct.normalization <- EcoAct.normalization
 
 ```
 
-land use mix
-```{r}
+Based on the National Land Use and Land Cover Classification (gov.uk, 2006), we classify the land use into seven categories--green space, industrial and commercial, residential, recreation, retail, community services and transport (figure). For each subset distribution, we extract and join polygons from OSM land cover shapefile and Area of Interest shapefile, finally, convert them into SpatialPolygonsDataFrame for rasterizing.
+```{r   echo=FALSE, fig.cap="A caption", out.width = '70%'}
+knitr::include_graphics("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/formula3.jpg")
+```
+
+```{r eval=FALSE, include=FALSE}
 ### Land use mix
 #https://en.wikipedia.org/wiki/Planning_use_classes_in_England 
 # six classes--
@@ -194,27 +161,21 @@ recreationBNGSF1 <- landcoverBNGSF[ which( landcoverBNGSF$fclass =="recreation_g
 recreationBNGSF2 <- AOISBNGSF[ which(AOISBNGSF$fclass =="attraction"|AOISBNGSF$fclass =="theatre"|AOISBNGSF$fclass =="arts_centre"),]
 recreationBNGSF <- rbind(recreationBNGSF2,recreationBNGSF1)
 recreationBNGSP <- as(recreationBNGSF,"Spatial")
-
-
 #CLASS 5 retail
 retailBNGSF1 <- landcoverBNGSF[ which( landcoverBNGSF$fclass =="retail" ),]
 retailBNGSF2 <- AOISBNGSF[ which( AOISBNGSF$fclass =="retail" ),]
 retialBNGSF <- rbind(retailBNGSF2,retailBNGSF1)
 retailBNGSP <- as(retailBNGSF,"Spatial")
-
 #CLASS 6--community services
 communityBNGSF <- AOISBNGSF[ which(AOISBNGSF$fclass =="school"|AOISBNGSF$fclass =="hospital"|AOISBNGSF$fclass =="nursing_home"|AOISBNGSF$fclass =="university"  ),]
 communityBNGSP <- as(communityBNGSF,"Spatial")
-
 #CLASS 7--transport
 transport <- readOGR("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/greater-london-latest-free.shp/road_polygon_merge.shp",layer="road_polygon_merge")
 transportBNG <- spTransform(transport, BNG)
 transportBNG <- transportBNG[transportBNG@data$AREA >10000,] 
-
-
 ```
 
-```{r}
+```{r eval=FALSE, include=FALSE}
 # Assign the land use area for each subset. Here we first use the most widespread residential as example 
 library(raster)
 r <- raster(ncols=400, nrows=400) #generate raster size(quantity)
@@ -252,10 +213,9 @@ residential.repolygonSF$area <- st_area(residential.repolygonSF)
 #so the single pixel area is 28999.54 [m^2](0.029 km^2)
 
 ```
-
-land use mix functions
-```{r}
-##based on the details above, we create functions for land use analysis
+Once these subsets have been compiled for area computation, those polygons are re-structured into 400*400 grid cell raster with raster package and assigned to each ward, in other words, extract number of raster cells in each ward polygons. In this process, the cell number in the raster significantly decided area computation accuracy. As more cells divided from the original polygon, the more precise of a cell's cover. So in order to access accuracy reliably, we should divide raster cells as more as possible. In addition, extract() from raster packages have a default option on weigh=FALSE, which means only cells whose centroid falls into a polygon are accounted(Geographic Information Systems, 2019). This option considerably avoids the repetitive counting for raster cells on ward boundaries. After cells assignment, cells count number multiply cell unit area will compute out the area of single category land use area. As each land use subset computation follows the same process, creating reusable functions in R improves the data manipulation efficiency as well as the availability of parameter modification.
+```{r echo=TRUE,eval=FALSE}
+##based on the details in rmd file, we create functions for land use analysis
 function.raster <- function(landsp){
   extent(r) <- extent(landsp)
   landsp.Raster <- rasterize(landsp,r,background=NA)
@@ -320,13 +280,18 @@ head(landuse.dataframe)
 
 
 ```
+On the basis of literature of measuring land use mix (Shannon, 1948; Kevin and Tyler, 2013), entropy index could be expressed as:
+```{r   echo=FALSE, fig.cap="A caption", out.width = '80%'}
+knitr::include_graphics("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/formula1.png")
+```
+*Where:*
+*Aij=percent of land use I in research area j, *
+*Nj=Number of represented land uses in research area j*
 
-```{r}
-
+```{r echo=TRUE,eval=FALSE}
 #calculate each ward area
 landuse.dataframeSF <-left_join(LondonWardSF,landuse.dataframe,by=c("gss_code_ward"="gss_code_ward.x"))
 landuse.dataframeSF$wardArea <- st_area(landuse.dataframeSF)
-
 library(SciViews)
 function.landusemix <- function(landusefreq){
   landusearea <- landusefreq*(0.029*0.029)
@@ -334,7 +299,9 @@ function.landusemix <- function(landusefreq){
   LUM <- landusePercent*ln(landusePercent)
   return(LUM)
 }
+```
 
+```{r}
 landuse.dataframeSF$residential.LUM <- function.landusemix(landuse.dataframeSF$residential.freq)
 landuse.dataframeSF$greenspace.LUM <- function.landusemix(landuse.dataframeSF$Freq.greenspace)
 landuse.dataframeSF$industrial.LUM <- function.landusemix(landuse.dataframeSF$Freq.industrial)
@@ -349,107 +316,166 @@ index.dataframe<- st_set_geometry(landuse.dataframeSF[,c(1:6,18:25)],NULL)
 index.dataframe[is.na(index.dataframe)] <- 0 
 ###compute land use mix index
 index.dataframe$MixIndex <- (abs(rowSums(index.dataframe[,8:14])))/ln(7)
-
-qtm(index.dataframeSF,fill="MixIndex")
+#MixIndex normalisation
+index.dataframe$MixIndex.normalization <- normalization(index.dataframe$MixIndex )
+qtm(index.dataframeSF,fill="MixIndex.normalization")
 ```
 
-```{r}
-
-qtm(residential.Raster)
-library(tmap)
-tmap_mode("view")
-tm_shape(LondonWard) +
-  tm_polygons(col = NA, alpha = 0.5) +
-tm_shape(residentialBNGSP) +
-  tm_polygons(col = "blue")
+According to the references above, considering the differentiation of factor impacts on built environment and urban activities, we assign the elements weightings for urban vitality index calculation below:
+```{r   echo=FALSE, fig.cap="A caption", out.width = '80%'}
+knitr::include_graphics("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/formula2.jpg")
 ```
+*Where:*
+*UVI=Urban vitality index, *
+*LUMI=Land use mix index, *
+*PDI=Population density index, *
+*AI=Accessibility index, *
+*EAI=Economic activity index*
 
-```{r}
+```{r echo=TRUE,eval=FALSE}
 ###combine all subindex 
 index.dataframe <- merge(index.dataframe,Density,by.x="gss_code_ward",by.y="New Code",all=TRUE)
 #index.dataframe[,3:7] <- NULL
 index.dataframe <- merge(index.dataframe,Access.normalization, by.x="gss_code_ward",by.y="WD13CD",all=TRUE)
 index.dataframe <- merge(index.dataframe,EcoAct, by.x="gss_code_ward",by.y="New Code",all=TRUE)
-index.dataframe <- index.dataframe[,c(1:4,15,20,25,29)]
+index.dataframe <- index.dataframe[,c(1:4,5:8)]
+head(index.dataframe)
 ###calculate the final index of wards,set weights
 function.vitality.index <- function(wLand,wDensity,wAccess,wEcoAct){
   Index <- (wLand)*(index.dataframe[,5])+(wDensity)*(index.dataframe[,6])+(wAccess)*(index.dataframe[,7])+(wEcoAct)*(index.dataframe[,8])
   return(Index)
 }
-#assign weight to each subindex
+#assign weighting to each subindex
 index.dataframe$Index <- function.vitality.index(0.4,0.3,0.2,0.1)
 #join with LondonWardSF and visualisation
 index.dataframeSF <-left_join(LondonWardSF,index.dataframe,by=c("gss_code_ward"="gss_code_ward"))
 index.dataframeSP <- as(index.dataframeSF, "Spatial")
 #create index facet(using tmap)
 tmap_mode("view")
-tm_shape(index.dataframeSP )+
-    tm_polygons(c("Index", "MixIndex","Density.normalization","EcoAct.normalization","access.mean")) +
-    tm_facets(sync = TRUE, ncol = 1,nrow=5,drop.empty.facets = F)
+#tm_shape(index.dataframeSP )+
+#    tm_polygons(c("Index", "MixIndex.normalization","Density.normalization.x","EcoAct.normalization.x","access.mean.x")) +
+#    tm_facets(sync = TRUE, ncol = 3,nrow=3,drop.empty.facets = F)
+```
+```{r eval=FALSE, include=FALSE}
+qtm(index.dataframeSP,fill="Index",fill.title="UVI")
+qtm(index.dataframeSP,fill="MixIndex.normalization",fill.title="Land Use Index")
+qtm(index.dataframeSP,fill="Density.normalization.x",fill.title="Population Density Index")
+qtm(index.dataframeSP,fill="EcoAct.normalization.x",fill.title="Economic Activity Index")
+qtm(index.dataframeSP,fill="access.mean.x",fill.title="Accessibility Index")
+
+```
+```{r   echo=FALSE, fig.cap="A caption", out.width = '80%'}
+knitr::include_graphics("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/UVI.jpg")
+knitr::include_graphics("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/POPULATION.jpg")
+knitr::include_graphics("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/LANDUSE.jpg")
+knitr::include_graphics("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/ECONOMY.jpg")
+knitr::include_graphics("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/ACCESS.jpg")
+
 ```
 
-#Test for the relationship
-##Linear regression model
+###3.2	Road intersection density(RID)
+First of all, we select the road junctions instead of all types of road intersection including road end from the shapefile, and remove duplicate points as well as points out of London. To count the number of road intersections distributed in each ward, poly.counts () from GIStools could compute a list of integers that represent the number of points in polygons. Despite this, poly.areas() in the same package can return the area of each polygon. Consequently, we simply calculate the point density using ward area (square kilometer) divided by number of points, rather than using kernel density estimation when we treat each ward as unit area and extract cross-ward raster will inevitably increase the error.
 
+```{r  echo=TRUE,eval=FALSE}
+### Road intersections
+node <- readOGR("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/Road Networkoproad_essh_gb/new_road_node.shp",layer="new_road_node")
+BNG = "+init=epsg:27700"
+nodeBNG <- spTransform(node, BNG)
+nodeBNGSF <- st_as_sf(nodeBNG)
+#select the node type"junction"
+nodeBNGSF <- nodeBNGSF[which(nodeBNGSF$formOfNode=="junction"),]
+nodeBNGSP <- as(nodeBNGSF, "Spatial")
+head(node)
+#select node point in borough
+nodeBNGSP <- remove.duplicates(nodeBNGSP)
+nodeBNGSP.final<- nodeBNGSP[LondonWard,]
+
+# count number of point in each ward 
+library(GISTools)
+poly.counts(nodeBNGSP.final, LondonWard) -> nodecount
+##setNames(nodecount, LondonWard@data$nodecount)
+London.node <- LondonWardSF
+London.node$nodecount <- nodecount   #add number of point to each ward (London.node$nodecount)
+#combine the ward area(sq km)
+London.node$Square_Kilometres <- LondonWard.join.popdens$`Square Kilometres`
+#or London.node$Square_Kilometres <- poly.areas(LondonWard.join.popdens)
+#calculate point/area--point per square kilometre
+London.node$PointPerSK <-London.node$nodecount/London.node$Square_Kilometres
+qtm(London.node,fill="PointPerSK")
+#join with LondonWardSF
+London.nodeSF <- append_data(LondonWardSF,London.node, key.shp = "code", key.data = "gss_code_ward", ignore.duplicates = TRUE)
+```
+##4.	Statistical test 
+The null hypothesis of this project is there is no relationship between UVI and RID, in other word, no statistically significant (at 95% confidence) relationship. Firstly, as the scatter plot shows a non-linear tendency, we should build the linear regression model after logarithm. As the new variables frequencies are approximately normal distributed, we will set up a parametric test of linear regression. We use lm() and summary() command to perform the regression model and obtain statistical information respectively. Since the outliers have little statistical impact on the fitting line, they can be kept in the model.
 ```{r}
-###Since we have done the most important part of data manipulation, next we will explore the relationship between intersection and vitality
-#histogram of two variables
-qplot(PointPerSK, data = London.node, geom = "histogram")
-#ggplot(London.node, aes(x="PointPerSK", y=PointPerSK))+geom_boxplot()#(this is another code for boxplot in ggplot2)
-#qplot(y=London.node$PointPerSK, x= 0.1, geom = "boxplot")  
-
-qplot(Index, data = index.dataframe, geom = "histogram")
-#qplot(y= index.dataframe$Index, x= 0.1, geom = "boxplot")  
-
-#the variables look normally distributed,but we should consider the outliers
-plot(London.node$PointPerSK,index.dataframeSF$Index,col="blue")
-#after scatter plot, we should remove "Lady Margaret" as its unusual road intersection density(maybe due to the residential road intersections are included)
-
+###We have done the most important part of data manipulation, next we will explore the relationship between intersection and vitality
 node.index.frame <-merge(index.dataframe,London.node, by.x="gss_code_ward",by.y="gss_code_ward",all=TRUE) 
-#remove outlier--Lady Margaret(E05000181)
-#node.index.frame <- node.index.frame[node.index.frame$PointPerSK<300,]
-#linear regression plot
-qplot(PointPerSK,Index,data=node.index.frame,geom = "point") + stat_smooth(method="lm", se=FALSE, size=1)
+#scatter plot
+plot(London.node$PointPerSK,index.dataframeSF$Index,col="ForestGreen",xlab="RID",ylab="UVI",main="RID-UVI Scatter Plot")
+#log(variables)
+node.index.frame$pointPerSK.log <- ln(node.index.frame$PointPerSK)
+node.index.frame$Index.log <- ln(node.index.frame$Index)
+#histogram of two variables
+qplot(pointPerSK.log , data = node.index.frame, geom = "histogram",xlab="RID.log")
+qplot(Index.log, data = node.index.frame, geom = "histogram",xlab="UVI.log")
+
+#boxplot for two variables
+par(mfrow=c(1, 2))
+boxplot( node.index.frame$Index.log, main="UVI.log",xaxt="n", sub=paste(boxplot.stats( node.index.frame$Index.log)$out),xlab="Boxplot for UVI.log")
+boxplot( node.index.frame$pointPerSK.log, main="RID.log",xaxt="n", sub=paste(boxplot.stats( node.index.frame$pointPerSK.log)$out),xlab="Boxplot for RID.log")
+```
+The coefficient in the summary table explains that for 1 unit road intersection density increase, the urban vitality index will grow 0.36. The p-value is statistically significant (<0.05) and adjusted R-squared is 48.96%, which means the regression model is reliable and 48.96% of UVI variables can be explained by variation in RID. Besides, in the diagnostic plots, residuals vs fitted plot shows that residuals basically spread around a horizontal line equally, it confirms that to some extent, the UVI and RID have a linear relationship. Normal Q-Q plot shows residuals following the straight line are normally distributed. Spread-Location plot has a non-horizontal line which indicates the variances are homogeneous. Linear regression necessary assumptions are not violated because the scatter plot of fitted values against standardized residuals does not show specific point patterns. Besides, there is no obvious spatial clustering in the test for residuals spatial patterns from visual inspection, although Moran I statistic in 0.123 indicates the existence of clustering for very few residuals. Thus, the null hypothesis could be rejected through a linear regression model and the conclusion is that there is a moderate positive relationship between UVI and RID.
+```{r}
 #fit the linear model
-model <- lm(PointPerSK ~ Index, data =node.index.frame)
-#residual dataframe
+ggplot(node.index.frame,aes(x=pointPerSK.log,y=Index.log))+ 
+  geom_point(color='grey27')+
+  geom_smooth(method=lm, se=TRUE,color="blue")+ggtitle("RID-UVI Linear regreesion model") +
+  xlab("RID") + ylab("UVI")+theme(plot.title = element_text(hjust = 0.5))
+#fit the linear model
+model3<-lm(Index.log ~pointPerSK.log , data =node.index.frame)
+#Diagnostic Plots
 library(broom)
-model_res <- tidy(model)
-summary(model)
-plot(model)
-
-
+model_res <- tidy(model3)
+summary(model3)
+plot(model3)
 ```
 
-The coefficient (estimate) in the summary() table shows that(on average) for a 1 unit (day) increase in unauthorised absence from school, there is a reduction in the average GCSE point score of -29.874.
+```{r eval=FALSE, include=FALSE}
+#build a Quadratic Model
+node.index.frame2 <- node.index.frame[c(1:92,94:156,158:219,221:227,229:249,250:325,373:553,555:630),]
+node.index.frame2$PointPerSK2 <- (node.index.frame2$PointPerSK)^2
+node.index.frame2$PointPerSK4 <- (node.index.frame2$PointPerSK)^4
 
-The p-values for the intercept and the coefficient are highly statistically significant (<0.001) so we can rely on the relationship that is being observed.
-
-The adjusted R-squared statistic is 0.38, which tells us that 38% of the variation in GCSE scores across Wards in London can be explained by variation in unauthorised absence from school (which is quite a lot for a single variable).
-
-Interrogating the last graph in plot(model1)which is a scatter plot of fitted values (the model estimates achieved by plugging the values and coefficients back into the regression equation) against standardised residuals, we can see no apparent patterns in the cloud of points, which suggests the model has not violated any important assumptions.
-
-##Test for spatial patterns
-we shoud test that is there any spatial clustering of residuals.If these places cluster in space, then there might be some unobserved underlying factor causing this. This is important is it means that the assumption of independence that regression models rely upon might be violated.
-Now in our case here, there is not a clear violation of spatial independence, but it is certainly hinted at.
- test for spatial patterns (spatial autocorrelation) using the Moran's I statistic
-```{r}
+quadratic.model <-lm(Index ~PointPerSK2+PointPerSK4+PointPerSK,data =node.index.frame2)
+ggplot(node.index.frame2, aes(x=PointPerSK,y=Index)) +
+      geom_point(color='grey27') +
+      stat_smooth(method = "lm", formula = y ~ log(x), size = 1,color="orangered1")
+plot(quadratic.model )
+summary(quadratic.model)
+#Fitting a Quadratic Model
+PointPerSKvalues <- seq(0,5, 0.01)
+predictedcounts <- predict(quadratic.model,list(PointPerSK=PointPerSKvalues, PointPerSK2=PointPerSKvalues^2))
+plot(node.index.frame$pointPerSK.log, node.index.frame$Index.log , pch=16, xlab = "PointPerSK.log", ylab = "Index.log", cex.lab = 0.8, col = "black")
+lines(PointPerSKvalues, predictedcounts, col = "blue", lwd =2)
+```
+```{r echo=TRUE, message=FALSE, warning=FALSE}
 ### Test for spatial patterns (spatial autocorrelation) using the Moran's I statistic
 #copy a new LondonWardSF
 LondonWardSF.pattern <- LondonWardSF
-LondonWardSF.pattern$model_resids <- model$residuals
+LondonWardSF.pattern$model_resids <- model3$residuals  
 LondonWardSF.pattern <- LondonWardSF.pattern[!(is.na(LondonWardSF.pattern$model_resids) ),]
 LondonWardSP.pattern <- as(LondonWardSF.pattern,"Spatial")
 tmap_mode("view")
-qtm(LondonWardSF.pattern,fill='model_resids')
-
-
+qtm(LondonWardSF.pattern,fill='model_resids',fill.title="Residual model")
+```
+```{r   echo=FALSE, fig.cap="A caption", out.width = '80%'}
+knitr::include_graphics("E:/UCL/005-GI System&Science/GIS-Assessment 3/R assessment3/residual plot.jpg")
 ```
 
-```{r}
+```{r echo=FALSE}
 #library(spdep)
 #Calculate the centroids of London wards
-centWard <- coordinates(LondonWardSP.pattern)
+centWard <- coordinates(LondonWard)
 plot(centWard)
 #Generate the spatial weights matrix,using binary matrix of queen's case neighbours
 #create neighbours list
@@ -464,34 +490,32 @@ SpatialWeight <- nb2listw(neighbour,style="C",zero.policy=T)
 #Run moran I test
 moran.test(LondonWardSP.pattern@data$model_resids, SpatialWeight,zero.policy=T)
 ```
-so here we have a statistically significant but relatively weak indication that there is some spatial clustering of residual values. A value of 0.07 (1 being perfect spatial autocorrelation, 0 being none at all) shows that there is no evidence that high residual values cluster near high values and low residual values cluster near lower values.
+##5.	Limitations and risks
+The raster cell assignment and transformation are the main risks in variation data manipulation. In the process of polygon raster conversion, the origin polygons that are not overlapped may generate lapped raster. Also, according to the rasterize() transfer principle, the value will be transferred when the polygon covers the raster cell center, which means the small polygons like tiny buildings or area of interest may not be covered by a raster, in other words. However, considering part of large polygons boundaries raster deficiency, these errors could somewhat self-counteract. It could be better to separate London wards into several groups for accurate cell computation if the cross-ward polygons are intersected. On the other hand, non-spatial data is still inaccuracy due to the quantitative method we proposed. The accessibility is consists of two subsets--transport accessibility and open space accessibility, which have significant difference in some ward but are integrated by arithmetic mean.
 
+##6.	Conclusion
+In the context of London ward, one of Jane Jacobs's theory is confirmed through geospatial data analysis that urban areas with higher number of road intersection have more vitality, that is to say, shorter blocks or high-density network can improve somewhat improve urban diversity and vitality. This verification provides more evidence for Jacobs's theory applying into urban planning practice. Also, based on integrated and multi-layered factors, this project measures the urban vitality index of London. Furthermore, measuring land use mix is a complicated and important portion of cross boundaries measurement and spatial data transformation.
 
-#multi linear regression model
-```{r}
-###For a deeper research, we will build a multiple linear regression model to find whether the urban vitality index has a relationship with urban vitality sub-factors. If so, which one is the strongest or weakest.
-#
-library(corrplot)
-cormat <- cor(node.index.frame[,c(5:8,16)], use="complete.obs", method="pearson")
-corrplot(cormat)
-#rRun multiple regression model
-model_multi <- lm(PointPerSK ~ MixIndex+Density.normalization + access.mean + EcoAct.normalization, data = node.index.frame)
-summary(model_multi)
-```
+At the same time, although the code-based reusable framework is reproducible in different environment, it still depends on circumstance as the deviation induced by project coordinate system and the research area size may or may not affect the accuracy in various conditions. Also the weightings assigned to each subset and reference variables can be changed flexibly. It is hoped that this model and analysis will provide more foundations and consensus for Jane Jacobs's urban theories.
 
-```{r}
-##same as residual autocorrelation analysis above
-model_res_multi <- tidy(model_multi)
-plot(model_multi)
-LondonWardSF.pattern$model_resids_multi <- model_multi$residuals
-LondonWardSP.pattern <- as(LondonWardSF.pattern,"Spatial")
-tmap_mode("view")
-qtm(LondonWardSF.pattern,fill='model_resids_multi')
-library(spdep)
-neighbour <- poly2nb(LondonWardSP.pattern,queen=T)
-#create spatial weights object from these weights
-SpatialWeight <- nb2listw(neighbour,style="C",zero.policy=T)
-#Run moran I test
-moran.test(LondonWardSP.pattern@data$model_resids_multi, SpatialWeight,zero.policy=T)
-```
+##Reference
+Delclòs-Alió, X. and Miralles-Guasch, C. (2018). Looking at Barcelona through Jane Jacobs's eyes: Mapping the basic conditions for urban vitality in a Mediterranean conurbation. *Land Use Policy*, 75, pp.505-517.
+
+Geographic Information Systems. (2019). extract() function from r raster package returns different cells if "weights" parameter is TRUE or FALSE. [online] Available at: https://gis.stackexchange.com/questions/187096/extract-function-from-r-raster-package-returns-different-cells-if-weights-pa [Accessed 4 Jan. 2019].
+
+Grant, J. (2002). Mixed Use in Theory and Practice: Canadian Experience with Implementing a Planning Principle. *Journal of the American Planning Association*, 68(1), pp.71-84.
+
+Jacobs, J. (2016). The death and life of great American cities. New York: Vintage Books. 
+
+Klemek, C. (2007). Placing Jane Jacobs within the Transatlantic Urban Conversation. *Journal of the American Planning Association*, 73(1), pp.49-67.
+
+Landry, C. (2000). Urban vitality: A new source of urban competitiveness.* Archis*, (12), pp.8-13.
+
+Li, M., Shen, Z. and Hao, X. (2016). Revealing the relationship between spatio-temporal distribution of population and urban function with social media data.* GeoJournal*, 81(6), pp.919-935.
+
+Maas, P.R. (1984). Towards a theory of urban vitality (Doctoral dissertation, University of British Columbia).
+
+Montgomery, J. (1995). Editorial Urban Vitality and the Culture of Cities. Planning Practice & Research, 10(2), pp.101-110.
+
+Quigley, J. (1998). Urban Diversity and Economic Growth. *Journal of Economic Perspectives*, 12(2), pp.127-138.
 
